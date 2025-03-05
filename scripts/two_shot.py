@@ -233,7 +233,17 @@ class Script(scripts.Script):
 
         def process_sketch(img_arr, input_binary_matrixes):
             input_binary_matrixes.clear()
-            im2arr = img_arr
+            
+            # Verificar si img_arr es un diccionario (formato Gradio 4.x) o un array (formato anterior)
+            if isinstance(img_arr, dict) and 'image' in img_arr:
+                im2arr = img_arr['image']
+            else:
+                im2arr = img_arr
+                
+            # Asegurarse de que es un numpy array
+            if not isinstance(im2arr, np.ndarray):
+                raise ValueError(f"Se esperaba un numpy array, pero se recibió {type(im2arr)}")
+                
             sketch_colors, color_counts = np.unique(im2arr.reshape(-1, im2arr.shape[2]), axis=0, return_counts=True)
             colors_fixed = []
             # if color count is less than 0.001 of total pixel count, collect it for edge color correction
@@ -356,21 +366,22 @@ class Script(scripts.Script):
                             self.mask_denoise = flag
 
                         mask_denoise_checkbox.change(fn=update_mask_denoise_flag, inputs=[mask_denoise_checkbox])
-                        # Updated Image component for Gradio 4.40
+                        # Usar gr.Image sin parámetros "tool" problemáticos
                         canvas_image = gr.Image(
                             source='upload', 
                             mirror_webcam=False, 
                             type='numpy', 
-                            elem_id='twoshot_canvas_sketch', 
+                            elem_id='twoshot_canvas_sketch',
                             interactive=True,
-                            height=480
+                            height=512,
+                            width=512
                         )
                         
-                        button_run = gr.Button("I've finished my sketch", elem_id="main_button")
-
+                        # Definir primero todas las variables que necesitaremos
                         prompts = []
                         colors = []
                         color_row = [None] * MAX_COLORS
+                        
                         with gr.Column(visible=False) as post_sketch:
                             with gr.Row(visible=False) as alpha_mask_row:
                                 with gr.Box(elem_id="alpha_mask"):
@@ -401,8 +412,41 @@ class Script(scripts.Script):
 
                             button_update = gr.Button("Prompt Info Update", elem_id="update_button")
                             final_prompt = gr.Textbox(label="Final Prompt", interactive=False)
-
-                        # Updated event handler syntax for Gradio 4.x
+                            
+                        # Conectar el evento de botón de actualización
+                        button_update.click(
+                            fn=update_mask_filters, 
+                            inputs=[alpha_blend, general_prompt, *cur_weight_sliders, *prompts], 
+                            outputs=[final_prompt, alpha_mask_row, alpha_color, *colors]
+                        )
+                        
+                        # Función para pegar el prompt final cuando se actualiza
+                        def paste_prompt(*input_prompts):
+                            final_prompts = input_prompts[:len(self.area_colors)]
+                            final_prompt_str = '\nAND '.join(final_prompts)
+                            return final_prompt_str
+                            
+                        source_prompts = [general_prompt, *prompts]
+                        button_update.click(
+                            fn=paste_prompt, 
+                            inputs=source_prompts,
+                            outputs=self.target_paste_prompt
+                        )
+                        
+                        # Instrucciones en inglés con fondo oscuro para mejor visibilidad
+                        gr.HTML("""
+                        <div style='text-align: center; margin: 10px 0; padding: 8px; background-color: #333; color: white; border-radius: 5px;'>
+                            <p><strong>Latent Couple Instructions:</strong></p>
+                            <p>1. Create a blank canvas or upload an image with different colored areas</p>
+                            <p>2. If you want to draw, it's recommended to use an external program like Paint and then upload the image</p>
+                            <p>3. Each color in the image will represent a different mask with its own prompt</p>
+                            <p>4. Click "I've finished my sketch" when you're done</p>
+                        </div>
+                        """)
+                        
+                        button_run = gr.Button("I've finished my sketch", elem_id="main_button")
+                        
+                        # Asegurarse de que el botón esté conectado correctamente
                         button_run.click(
                             fn=process_sketch, 
                             inputs=[canvas_image, binary_matrixes],
