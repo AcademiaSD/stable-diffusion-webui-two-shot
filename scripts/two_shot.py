@@ -17,6 +17,9 @@ from modules.script_callbacks import CFGDenoisedParams, on_cfg_denoised
 
 from modules.processing import StableDiffusionProcessing
 
+# Maximum number of colors to handle
+MAX_COLORS = 12
+
 # Switch values symbol for UI
 switch_values_symbol = '\U000021C5' # ⇅
 
