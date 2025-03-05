@@ -21,20 +21,16 @@ MAX_COLORS = 12
 switch_values_symbol = '\U000021C5' # ⇅
 
 
-class ToolButton(gr.Button, gr.components.FormComponent):
+# Updated ToolButton class for Gradio 4.x
+class ToolButton(gr.Button):
     """Small button with single emoji as text, fits inside gradio forms"""
 
     def __init__(self, **kwargs):
         super().__init__(variant="tool", **kwargs)
 
-    def get_block_name(self):
-        return "button"
-
 
 # abstract base class for filters
 from abc import ABC, abstractmethod
-
-
 
 
 class Filter(ABC):
@@ -42,7 +38,6 @@ class Filter(ABC):
     @abstractmethod
     def create_tensor(self):
         pass
-
 
 
 @dataclass
@@ -57,7 +52,6 @@ class Position:
     x: float
     ey: float
     ex: float
-
 
 
 class RectFilter(Filter):
@@ -93,19 +87,6 @@ class MaskFilter:
         self.tensor_mask = torch.tensor(self.mask).to(devices.device)
 
     def create_tensor(self, num_channels: int, height_b: int, width_b: int) -> torch.Tensor:
-
-
-        # x = torch.zeros(num_channels, height_b, width_b).to(devices.device)
-        # mask = torch.tensor(self.mask).to(devices.device)
-        # downsample mask to x size
-        # mask_bicubic = torch.nn.functional.interpolate(mask.unsqueeze(0).unsqueeze(0), size=(height_b, width_b), mode='bicubic').squeeze(0).squeeze(0).cpu().numpy()
-        #
-        # mask_nearest_exact = torch.nn.functional.interpolate(mask.unsqueeze(0).unsqueeze(0), size=(height_b, width_b), mode='nearest-exact').squeeze(0).squeeze(0).cpu().numpy()
-        #
-        # mask_nearest = torch.nn.functional.interpolate(mask.unsqueeze(0).unsqueeze(0), size=(height_b, width_b), mode='nearest').squeeze(0).squeeze(0).cpu().numpy()
-        #
-        # mask_area = torch.nn.functional.interpolate(mask.unsqueeze(0).unsqueeze(0), size=(height_b, width_b), mode='area').squeeze(0).squeeze(0).cpu().numpy()
-
         mask = torch.nn.functional.interpolate(self.tensor_mask.unsqueeze(0).unsqueeze(0), size=(height_b, width_b), mode='nearest-exact').squeeze(0).squeeze(0)
         mask = mask.unsqueeze(0).repeat(num_channels, 1, 1)
 
@@ -121,22 +102,23 @@ class PastePromptTextboxTracker:
         self.scripts.append(script)
 
     def on_after_component_callback(self, component, **_kwargs):
-
         if not self.scripts:
             return
-        if type(component) is gr.State:
+        if isinstance(component, gr.State):
             return
 
         script = None
-        if type(component) is gr.Textbox and component.elem_id == 'txt2img_prompt':
+        if isinstance(component, gr.Textbox) and getattr(component, 'elem_id', '') == 'txt2img_prompt':
             # select corresponding script
-            script = next(x for x in self.scripts if x.is_txt2img)
-            self.scripts.remove(script)
+            script = next((x for x in self.scripts if x.is_txt2img), None)
+            if script:
+                self.scripts.remove(script)
 
-        if type(component) is gr.Textbox and component.elem_id == 'img2img_prompt':
+        if isinstance(component, gr.Textbox) and getattr(component, 'elem_id', '') == 'img2img_prompt':
             # select corresponding script
-            script = next(x for x in self.scripts if x.is_img2img)
-            self.scripts.remove(script)
+            script = next((x for x in self.scripts if x.is_img2img), None)
+            if script:
+                self.scripts.remove(script)
 
         if script is None:
             return
@@ -170,7 +152,6 @@ class Script(scripts.Script):
         return scripts.AlwaysVisible
 
     def create_rect_filters_from_ui_params(self, raw_divisions: str, raw_positions: str, raw_weights: str):
-
         divisions = []
         for division in raw_divisions.split(','):
             y, x = division.split(':')
@@ -199,7 +180,6 @@ class Script(scripts.Script):
         return [RectFilter(division, position, weight) for division, position, weight in zip(divisions, positions, weights)]
 
     def create_mask_filters_from_ui_params(self, raw_divisions: str, raw_positions: str, raw_weights: str):
-
         divisions = []
         for division in raw_divisions.split(','):
             y, x = division.split(':')
@@ -228,9 +208,7 @@ class Script(scripts.Script):
         return [Filter(division, position, weight) for division, position, weight in zip(divisions, positions, weights)]
 
     def do_visualize(self, raw_divisions: str, raw_positions: str, raw_weights: str):
-
         self.filters = self.create_rect_filters_from_ui_params(raw_divisions, raw_positions, raw_weights)
-
         return [f.create_tensor(1, 128, 128).squeeze(dim=0).cpu().numpy() for f in self.filters]
 
     def do_apply(self, extra_generation_params: str):
@@ -251,24 +229,13 @@ class Script(scripts.Script):
         process_script_params = []
         id_part = "img2img" if is_img2img else "txt2img"
         canvas_html = "<div id='canvas-root' style='max-width:400px; margin: 0 auto'></div>"
-        # get_js_colors = """
-        # async (canvasData) => {
-        #   const canvasEl = document.getElementById("canvas-root");
-        #   return [canvasEl._data]
-        # }
-        # """
 
         def create_canvas(h, w):
             return np.zeros(shape=(h, w, 3), dtype=np.uint8) + 255
 
         def process_sketch(img_arr, input_binary_matrixes):
             input_binary_matrixes.clear()
-            # base64_img = canvas_data['image']
-            # image_data = base64.b64decode(base64_img.split(',')[1])
-            # image = Image.open(BytesIO(image_data)).convert("RGB")
             im2arr = img_arr
-            # colors = [tuple(map(int, rgb[4:-1].split(','))) for rgb in
-            #           ['colors']]
             sketch_colors, color_counts = np.unique(im2arr.reshape(-1, im2arr.shape[2]), axis=0, return_counts=True)
             colors_fixed = []
             # if color count is less than 0.001 of total pixel count, collect it for edge color correction
@@ -307,17 +274,18 @@ class Script(scripts.Script):
                 mask, binary_matrix = create_binary_matrix_base64(im2arr, color)
                 self.ndmasks.append(mask)
                 input_binary_matrixes.append(binary_matrix)
-                colors_fixed.append(gr.update(
-                    value=f'<div style="display:flex;justify-content:center;max-height: 94px;"><img width="20%" style="object-fit: contain;flex-grow:1;margin-right: 1em;" src="data:image/png;base64,{binary_matrix}" /><div class="color-bg-item" style="background-color: rgb({r},{g},{b});width:10%;height:auto;"></div></div>'))
-
-
+                colors_fixed.append(
+                    gr.HTML.update(
+                        value=f'<div style="display:flex;justify-content:center;max-height: 94px;"><img width="20%" style="object-fit: contain;flex-grow:1;margin-right: 1em;" src="data:image/png;base64,{binary_matrix}" /><div class="color-bg-item" style="background-color: rgb({r},{g},{b});width:10%;height:auto;"></div></div>'
+                    )
+                )
 
             visibilities = []
             sketch_colors = []
 
             for sketch_color_idx in range(MAX_COLORS):
                 visibilities.append(gr.update(visible=False))
-                sketch_colors.append(gr.update(value=f'<div class="color-bg-item" style="background-color: black"></div>'))
+                sketch_colors.append(gr.HTML.update(value=f'<div class="color-bg-item" style="background-color: black"></div>'))
             for j in range(len(colors_fixed)-1):
                 visibilities[j] = gr.update(visible=True)
                 sketch_colors[j] = colors_fixed[j]
@@ -342,7 +310,6 @@ class Script(scripts.Script):
             final_filter_list.insert(0, alpha_blend_filter)
             self.filters = final_filter_list
 
-
             sketch_colors = []
             colors_fixed = []
             for area_idx, color in enumerate(self.area_colors):
@@ -358,21 +325,22 @@ class Script(scripts.Script):
                 _, adjusted_mask_arr = cv2.imencode('.png', adjusted_mask)
 
                 adjusted_mask_b64 = base64.b64encode(adjusted_mask_arr.tobytes()).decode('ascii')
-                colors_fixed.append(gr.update(
-                    value=f'<div style="display:flex;justify-content:center;max-height: 94px;"><img width="20%" style="object-fit: contain;flex-grow:1;margin-right: 1em;" src="data:image/png;base64,{adjusted_mask_b64}" /><div class="color-bg-item" style="background-color: rgb({r},{g},{b});width:10%;height:auto;"></div></div>'))
+                colors_fixed.append(
+                    gr.HTML.update(
+                        value=f'<div style="display:flex;justify-content:center;max-height: 94px;"><img width="20%" style="object-fit: contain;flex-grow:1;margin-right: 1em;" src="data:image/png;base64,{adjusted_mask_b64}" /><div class="color-bg-item" style="background-color: rgb({r},{g},{b});width:10%;height:auto;"></div></div>'
+                    )
+                )
             for sketch_color_idx in range(MAX_COLORS):
-
                 sketch_colors.append(
-                    gr.update(value=f'<div class="color-bg-item" style="background-color: black"></div>'))
+                    gr.HTML.update(value=f'<div class="color-bg-item" style="background-color: black"></div>')
+                )
             for j in range(len(colors_fixed)-1):
-
                 sketch_colors[j] = colors_fixed[j]
+            
             alpha_mask_visibility = gr.update(visible=True)
             alpha_mask_html = colors_fixed[-1]
-            final_prompt_update = gr.update(value='\nAND '.join([general_prompt_str, *cur_prompts[:len(colors_fixed)-1]]))
+            final_prompt_update = gr.Textbox.update(value='\nAND '.join([general_prompt_str, *cur_prompts[:len(colors_fixed)-1]]))
             return [final_prompt_update, alpha_mask_visibility, alpha_mask_html, *sketch_colors]
-
-
 
         cur_weight_sliders = []
 
@@ -383,40 +351,38 @@ class Script(scripts.Script):
                 with gr.Tabs(elem_id="script_twoshot_tabs") as twoshot_tabs:
 
                     with gr.TabItem("Mask", elem_id="tab_twoshot_mask") as twoshot_tab_mask:
-
                         canvas_data = gr.JSON(value={}, visible=False)
-                        # model = gr.Textbox(label="The id of any Hugging Face model in the diffusers format",
-                        #                    value="stabilityai/stable-diffusion-2-1-base",
-                        #                    visible=False if is_shared_ui else True)
                         mask_denoise_checkbox = gr.Checkbox(value=False, label="Denoise Mask")
 
                         def update_mask_denoise_flag(flag):
                             self.mask_denoise = flag
 
-                        mask_denoise_checkbox.change(fn=update_mask_denoise_flag, inputs=[mask_denoise_checkbox], outputs=None)
-                        canvas_image = gr.Image(source='upload', mirror_webcam=False, type='numpy', tool='color-sketch',
-                                                elem_id='twoshot_canvas_sketch', interactive=True).style(height=480)
-                        # aspect = gr.Radio(["square", "horizontal", "vertical"], value="square", label="Aspect Ratio",
-                        #                   visible=False if is_shared_ui else True)
-                        button_run = gr.Button("I've finished my sketch", elem_id="main_button", interactive=True)
+                        mask_denoise_checkbox.change(fn=update_mask_denoise_flag, inputs=[mask_denoise_checkbox])
+                        # Updated Image component
+                        canvas_image = gr.Image(
+                            source='upload', 
+                            mirror_webcam=False, 
+                            type='numpy', 
+                            tool='color-sketch',
+                            elem_id='twoshot_canvas_sketch', 
+                            interactive=True
+                        ).style(height=480)
+                        
+                        button_run = gr.Button("I've finished my sketch", elem_id="main_button")
 
                         prompts = []
                         colors = []
                         color_row = [None] * MAX_COLORS
                         with gr.Column(visible=False) as post_sketch:
                             with gr.Row(visible=False) as alpha_mask_row:
-                                # general_mask_label_span = gr.HTML(
-                                #     '<span class="text-gray-500 text-[0.855rem] mb-2 block dark:text-gray-200 relative z-40">General Mask</span>',
-                                #     elem_id='general_mask_label_span')
                                 with gr.Box(elem_id="alpha_mask"):
                                     alpha_color = gr.HTML(
                                         '<div class="alpha-mask-item" style="background-color: black"></div>')
                             general_prompt = gr.Textbox(label="General Prompt")
-                            alpha_blend = gr.Slider(label="Alpha Blend", minimum=0.0, maximum=1.0, value=0.2, step=0.01, interactive=True)
+                            alpha_blend = gr.Slider(label="Alpha Blend", minimum=0.0, maximum=1.0, value=0.2, step=0.01)
 
                             for n in range(MAX_COLORS):
                                 with gr.Row(visible=False) as color_row[n]:
-
                                     with gr.Box(elem_id="color-bg"):
                                         colors.append(gr.HTML(
                                             '<div class="color-bg-item" style="background-color: black"></div>'))
@@ -425,39 +391,61 @@ class Script(scripts.Script):
                                             prompts.append(gr.Textbox(label="Prompt for this mask"))
 
                                         with gr.Row():
-                                            weight_slider = gr.Slider(label=f"Area {n+1} Weight", minimum=0.0, maximum=1.0,
-                                                                    value=1.0, step=0.01, interactive=True, elem_id=f"weight_{n+1}_slider")
+                                            weight_slider = gr.Slider(
+                                                label=f"Area {n+1} Weight", 
+                                                minimum=0.0, 
+                                                maximum=1.0,
+                                                value=1.0, 
+                                                step=0.01, 
+                                                elem_id=f"weight_{n+1}_slider"
+                                            )
                                             cur_weight_sliders.append(weight_slider)
 
-                            button_update = gr.Button("Prompt Info Update", elem_id="update_button", interactive=True)
+                            button_update = gr.Button("Prompt Info Update", elem_id="update_button")
                             final_prompt = gr.Textbox(label="Final Prompt", interactive=False)
 
-                        button_run.click(process_sketch, inputs=[canvas_image, binary_matrixes],
-                                         outputs=[post_sketch, binary_matrixes, alpha_mask_row, alpha_color, *color_row, *colors],
-                                         queue=False)
+                        # Updated event handler syntax for Gradio 4.x
+                        button_run.click(
+                            fn=process_sketch, 
+                            inputs=[canvas_image, binary_matrixes],
+                            outputs=[post_sketch, binary_matrixes, alpha_mask_row, alpha_color, *color_row, *colors],
+                        )
 
-                        button_update.click(fn=update_mask_filters, inputs=[alpha_blend, general_prompt, *cur_weight_sliders, *prompts], outputs=[final_prompt, alpha_mask_row, alpha_color, *colors])
+                        button_update.click(
+                            fn=update_mask_filters, 
+                            inputs=[alpha_blend, general_prompt, *cur_weight_sliders, *prompts], 
+                            outputs=[final_prompt, alpha_mask_row, alpha_color, *colors]
+                        )
 
                         def paste_prompt(*input_prompts):
                             final_prompts = input_prompts[:len(self.area_colors)]
                             final_prompt_str = '\nAND '.join(final_prompts)
                             return final_prompt_str
+                            
                         source_prompts = [general_prompt, *prompts]
-                        button_update.click(fn=paste_prompt, inputs=source_prompts,
-                                            outputs=self.target_paste_prompt)
-
-
+                        button_update.click(
+                            fn=paste_prompt, 
+                            inputs=source_prompts,
+                            outputs=self.target_paste_prompt
+                        )
 
                         with gr.Column():
                             canvas_width = gr.Slider(label="Canvas Width", minimum=256, maximum=1024, value=512, step=64)
                             canvas_height = gr.Slider(label="Canvas Height", minimum=256, maximum=1024, value=512, step=64)
 
-
                             canvas_swap_res = ToolButton(value=switch_values_symbol)
-                            canvas_swap_res.click(lambda w, h: (h, w), inputs=[canvas_width, canvas_height],
-                                                  outputs=[canvas_width, canvas_height])
+                            canvas_swap_res.click(
+                                fn=lambda w, h: (h, w), 
+                                inputs=[canvas_width, canvas_height],
+                                outputs=[canvas_width, canvas_height]
+                            )
+                            
                         create_button = gr.Button(value="Create blank canvas")
-                        create_button.click(fn=create_canvas, inputs=[canvas_height, canvas_width], outputs=[canvas_image])
+                        create_button.click(
+                            fn=create_canvas, 
+                            inputs=[canvas_height, canvas_width], 
+                            outputs=[canvas_image]
+                        )
 
                     with gr.TabItem("Rectangular", elem_id="tab_twoshot_rect") as twoshot_tab_rect:
                         with gr.Row():
@@ -465,26 +453,48 @@ class Script(scripts.Script):
                             positions = gr.Textbox(label="Positions", elem_id=f"cd_{id_part}_positions", value="0:0,0:0,0:1")
                         with gr.Row():
                             weights = gr.Textbox(label="Weights", elem_id=f"cd_{id_part}_weights", value="0.2,0.8,0.8")
-                            end_at_step = gr.Slider(minimum=0, maximum=150, step=1, label="end at this step", elem_id=f"cd_{id_part}_end_at_this_step", value=150)
+                            end_at_step = gr.Slider(
+                                minimum=0, 
+                                maximum=150, 
+                                step=1, 
+                                label="end at this step", 
+                                elem_id=f"cd_{id_part}_end_at_this_step", 
+                                value=150
+                            )
 
                         visualize_button = gr.Button(value="Visualize")
-                        visual_regions = gr.Gallery(label="Regions").style(grid=(4, 4, 4, 8), height="auto")
+                        # Updated Gallery component
+                        visual_regions = gr.Gallery(label="Regions").style(columns=4, height="auto")
 
-                        visualize_button.click(fn=self.do_visualize, inputs=[divisions, positions, weights], outputs=[visual_regions])
+                        visualize_button.click(
+                            fn=self.do_visualize, 
+                            inputs=[divisions, positions, weights], 
+                            outputs=[visual_regions]
+                        )
 
                         extra_generation_params = gr.Textbox(label="Extra generation params")
                         apply_button = gr.Button(value="Apply")
 
-                        apply_button.click(fn=self.do_apply, inputs=[extra_generation_params], outputs=[divisions, positions, weights, end_at_step])
+                        apply_button.click(
+                            fn=self.do_apply, 
+                            inputs=[extra_generation_params], 
+                            outputs=[divisions, positions, weights, end_at_step]
+                        )
 
+                    # Updated tab selection handler for Gradio 4.x
                     def select_twosoht_tab(tab_id):
                         self.selected_twoshot_tab = tab_id
-                    for i, elem in enumerate(
-                            [twoshot_tab_mask, twoshot_tab_rect]):
-                        elem.select(
-                            fn=lambda tab=i: select_twosoht_tab(tab),
-                            inputs=[],
-                            outputs=[],
+                        
+                    twoshot_tab_mask.select(
+                        fn=lambda: select_twosoht_tab(0),
+                        inputs=[],
+                        outputs=[],
+                    )
+                    
+                    twoshot_tab_rect.select(
+                        fn=lambda: select_twosoht_tab(1),
+                        inputs=[],
+                        outputs=[],
                     )
 
         self.ui_root = group_two_shot_root
@@ -502,9 +512,7 @@ class Script(scripts.Script):
         return process_script_params
 
     def denoised_callback(self, params: CFGDenoisedParams):
-
         if self.enabled and params.sampling_step < self.end_at_step:
-
             x = params.x
             # x.shape = [batch_size, C, H // 8, W // 8]
 
@@ -553,7 +561,6 @@ class Script(scripts.Script):
                 uncond_off += 1
 
     def process(self, p: StableDiffusionProcessing, *args, **kwargs):
-
         enabled, raw_divisions, raw_positions, raw_weights, raw_end_at_step, alpha_blend, *cur_weight_sliders = args
 
         self.enabled = enabled
@@ -571,11 +578,6 @@ class Script(scripts.Script):
             raise ValueError(f"Unknown filter mode")
 
         self.end_at_step = raw_end_at_step
-
-        # TODO: handle different cases for generation info: 'mask' and 'rect'
-        # if self.end_at_step != 0:
-        #     p.extra_generation_params["Latent Couple"] = f"divisions={raw_divisions} positions={raw_positions} weights={raw_weights} end at step={raw_end_at_step}"
-
 
         if self.debug:
             print(f"### Latent couple ###")
