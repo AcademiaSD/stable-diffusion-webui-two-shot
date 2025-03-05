@@ -358,15 +358,17 @@ class Script(scripts.Script):
                             self.mask_denoise = flag
 
                         mask_denoise_checkbox.change(fn=update_mask_denoise_flag, inputs=[mask_denoise_checkbox])
-                        # Updated Image component
+                        # Updated Image component for Gradio 4.40
                         canvas_image = gr.Image(
                             source='upload', 
                             mirror_webcam=False, 
                             type='numpy', 
-                            tool='color-sketch',
                             elem_id='twoshot_canvas_sketch', 
-                            interactive=True
-                        ).style(height=480)
+                            interactive=True,
+                            height=480,
+                            # In Gradio 4.x, the drawing tools are set differently
+                            tool="sketch"
+                        )
                         
                         button_run = gr.Button("I've finished my sketch", elem_id="main_button")
 
@@ -463,8 +465,12 @@ class Script(scripts.Script):
                             )
 
                         visualize_button = gr.Button(value="Visualize")
-                        # Updated Gallery component
-                        visual_regions = gr.Gallery(label="Regions").style(columns=4, height="auto")
+                        # Updated Gallery component for Gradio 4.40
+                        visual_regions = gr.Gallery(
+                            label="Regions",
+                            columns=4,
+                            height="auto"
+                        )
 
                         visualize_button.click(
                             fn=self.do_visualize, 
