@@ -17,16 +17,11 @@ from modules.script_callbacks import CFGDenoisedParams, on_cfg_denoised
 
 from modules.processing import StableDiffusionProcessing
 
-MAX_COLORS = 12
+# Switch values symbol for UI
 switch_values_symbol = '\U000021C5' # ⇅
 
-
-# Updated ToolButton class for Gradio 4.x
-class ToolButton(gr.Button):
-    """Small button with single emoji as text, fits inside gradio forms"""
-
-    def __init__(self, **kwargs):
-        super().__init__(variant="tool", **kwargs)
+# Using Button directly instead of creating a custom class 
+# since ToolButton class causes issues in Gradio 4.x
 
 
 # abstract base class for filters
@@ -365,9 +360,7 @@ class Script(scripts.Script):
                             type='numpy', 
                             elem_id='twoshot_canvas_sketch', 
                             interactive=True,
-                            height=480,
-                            # In Gradio 4.x, the drawing tools are set differently
-                            tool="sketch"
+                            height=480
                         )
                         
                         button_run = gr.Button("I've finished my sketch", elem_id="main_button")
@@ -435,7 +428,7 @@ class Script(scripts.Script):
                             canvas_width = gr.Slider(label="Canvas Width", minimum=256, maximum=1024, value=512, step=64)
                             canvas_height = gr.Slider(label="Canvas Height", minimum=256, maximum=1024, value=512, step=64)
 
-                            canvas_swap_res = ToolButton(value=switch_values_symbol)
+                            canvas_swap_res = gr.Button(value=switch_values_symbol, variant="tool", size="sm")
                             canvas_swap_res.click(
                                 fn=lambda w, h: (h, w), 
                                 inputs=[canvas_width, canvas_height],
